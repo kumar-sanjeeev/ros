@@ -202,6 +202,11 @@ def test_mock_config_is_the_driver_config_without_the_object_status(config):
     assert mock_params == driver_params
 
 
+@pytest.mark.parametrize("config", ALL_CONFIGS + MOCK_CONFIGS + TOPIC_BASED_CONFIGS)
+def test_configs_relay_a_decided_goal_within_a_few_cycles(config):
+    assert gripper_controller_params(config)["action_monitor_rate"] == 100.0
+
+
 # Humble EOL: delete this test.
 @pytest.mark.parametrize("config", (HUMBLE_CONFIG, HUMBLE_MOCK_CONFIG))
 def test_humble_configs_claim_no_unsupported_interfaces(config):
