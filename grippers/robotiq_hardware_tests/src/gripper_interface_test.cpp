@@ -34,6 +34,7 @@
 #include <chrono>
 #include <cstdint>
 #include <iostream>
+#include <optional>
 #include <string>
 
 #include <Robotiq/gripper.hpp>
@@ -69,21 +70,22 @@ bool moveTo(Robotiq::Gripper& gripper, uint8_t position, uint8_t speed, uint8_t 
    // The gripper needs a cycle or two to acknowledge the request before
    // gOBJ leaves Moving; wait for the echo first so this does not read the
    // previous move's "stopped" and return immediately.
-   const auto deadline = std::chrono::steady_clock::now() + kMotionTimeout;
-   if(!Robotiq::waitUntil([&] { return gripper.getStatus().positionRequestEcho == position; }, deadline))
+   if(!Robotiq::waitFor(
+         gripper,
+         [&](const Robotiq::StampedExchange& exchange) { return exchange.status.positionRequestEcho == position; },
+         kMotionTimeout))
    {
       std::cout << "  the gripper never echoed the position request" << std::endl;
       return false;
    }
-   if(!Robotiq::waitUntil(
-         [&] { return gripper.getStatus().gripperStatus.objectDetection() != Robotiq::ObjectDetection::Moving; },
-         deadline))
+   const std::optional<Robotiq::StampedExchange> settled = Robotiq::waitForMotionEnd(gripper, kMotionTimeout);
+   if(!settled)
    {
       std::cout << "  the gripper is still moving after " << kMotionTimeout.count() << " s" << std::endl;
       return false;
    }
 
-   const Robotiq::GripperStatus status = gripper.getStatus();
+   const Robotiq::GripperStatus& status = settled->status;
    std::cout << "  stopped at " << static_cast<int>(status.position) << " counts"
              << (status.gripperStatus.objectDetection() == Robotiq::ObjectDetection::AtRequestedPosition
                     ? ""

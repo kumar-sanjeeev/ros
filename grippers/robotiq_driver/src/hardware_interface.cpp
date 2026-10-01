@@ -366,28 +366,29 @@ hardware_interface::CallbackReturn RobotiqGripperHardwareInterface::on_activate(
    command_.action.set(Robotiq::ActionRequestBit::GoTo);
    gripper_->setCommand(command_);
 
-   if(!Robotiq::waitFor([&] { return gripper_->getStatus().positionRequestEcho == kPostActivationPosition; },
-                        kCommandEchoTimeout))
+   if(!Robotiq::waitFor(
+         *gripper_,
+         [](const Robotiq::StampedExchange& exchange) {
+            return exchange.status.positionRequestEcho == kPostActivationPosition;
+         },
+         kCommandEchoTimeout))
    {
       RCLCPP_WARN(kLogger, "The gripper never echoed the post-activation position request.");
    }
-   else if(!Robotiq::waitFor(
-              [&] { return gripper_->getStatus().gripperStatus.objectDetection() == Robotiq::ObjectDetection::Moving; },
-              kMotionStartTimeout))
+   else if(!Robotiq::waitForObjectDetection(*gripper_, Robotiq::ObjectDetection::Moving, kMotionStartTimeout))
    {
       RCLCPP_DEBUG(kLogger, "No motion seen after the post-activation command; the fingers may already be there.");
    }
 
-   if(!Robotiq::waitFor(
-         [&] { return gripper_->getStatus().gripperStatus.objectDetection() != Robotiq::ObjectDetection::Moving; },
-         kMotionTimeout))
+   const std::optional<Robotiq::StampedExchange> settled = Robotiq::waitForMotionEnd(*gripper_, kMotionTimeout);
+   if(!settled)
    {
       RCLCPP_WARN(kLogger,
                   "The gripper had not settled %d ms after the post-activation command; publishing its position "
                   "anyway.",
                   static_cast<int>(std::chrono::milliseconds{kMotionTimeout}.count()));
    }
-   const Robotiq::GripperStatus status = gripper_->getStatus();
+   const Robotiq::GripperStatus status = settled ? settled->status : gripper_->getStatus();
 
    // Seed both sides from that settled reading so the first exported state, and
    // any hold target derived from it, describe where the fingers actually are.
@@ -426,7 +427,10 @@ hardware_interface::CallbackReturn RobotiqGripperHardwareInterface::on_deactivat
       // The exchange is asynchronous: without waiting for the gripper to
       // report the reset, a cleanup following closely can stop the exchange
       // cycle before the command goes out, leaving the gripper activated.
-      if(!Robotiq::waitFor([this] { return !gripper_->getStatus().gripperStatus.activated(); }, kDeactivationTimeout))
+      if(!Robotiq::waitFor(
+            *gripper_,
+            [](const Robotiq::StampedExchange& exchange) { return !exchange.status.gripperStatus.activated(); },
+            kDeactivationTimeout))
       {
          RCLCPP_ERROR(kLogger, "Failed to deactivate the Robotiq gripper: it did not clear its activation bit.");
          return CallbackReturn::ERROR;
