@@ -29,9 +29,12 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <limits>
 #include <optional>
 #include <type_traits>
+
+#include <Robotiq/gripper/to_string.hpp>
 
 #include <robotiq_driver/gripper_scaling.hpp>
 
@@ -159,6 +162,19 @@ TEST(GripperScaling, TheFaultInterfacesReadTheGripperFaultAndItsOwnSeverity)
    const auto expectedGripperFault = Robotiq::GripperFault::InternalFault;
    EXPECT_EQ(static_cast<double>(expectedGripperFault), gripperFaultFromRegister(fault));
    EXPECT_EQ(static_cast<double>(Robotiq::severity(expectedGripperFault)), gripperFaultSeverityFromRegister(fault));
+}
+
+TEST(GripperScaling, ObjectStatusIsNaNUnlessTheLinkIsOperational)
+{
+   EXPECT_EQ(static_cast<double>(Robotiq::ObjectDetection::DetectedWhileClosing),
+             objectStatusValue(Robotiq::ObjectDetection::DetectedWhileClosing, Robotiq::ConnectionState::Operational));
+   for(const Robotiq::ConnectionState connection : {Robotiq::ConnectionState::Disconnected,
+                                                    Robotiq::ConnectionState::Connecting,
+                                                    Robotiq::ConnectionState::Faulted})
+   {
+      EXPECT_TRUE(std::isnan(objectStatusValue(Robotiq::ObjectDetection::DetectedWhileClosing, connection)))
+         << Robotiq::toString(connection);
+   }
 }
 
 } // namespace robotiq_driver::test

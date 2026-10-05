@@ -41,7 +41,9 @@
 #include <limits>
 #include <optional>
 
+#include <Robotiq/gripper/connection_state.hpp>
 #include <Robotiq/gripper/fault_status.hpp>
+#include <Robotiq/gripper/status.hpp>
 
 namespace robotiq_driver {
 
@@ -126,4 +128,12 @@ inline constexpr double kAmperesPerCurrentCount = 0.010;
 {
    return static_cast<double>(Robotiq::severity(fault.gripperFault()));
 }
+
+[[nodiscard]] inline double objectStatusValue(Robotiq::ObjectDetection detection, Robotiq::ConnectionState connection)
+{
+   return connection == Robotiq::ConnectionState::Operational ? static_cast<double>(detection)
+                                                              : std::numeric_limits<double>::quiet_NaN();
+   //            \__when the connection state is not operational, we must avoid reporting a stale state
+}
+
 } // namespace robotiq_driver

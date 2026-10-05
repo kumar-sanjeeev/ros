@@ -219,6 +219,18 @@ TEST(Verdict, waits_for_a_change_after_an_undecided_goal)
    EXPECT_FALSE(verdict.decide(later(3), ObjectDetection::DetectedWhileClosing).has_value());
 }
 
+TEST(Verdict, repeats_nothing_when_the_reading_is_unavailable)
+{
+   Verdict verdict = afterAStall();
+   verdict.reset(later(2), std::nullopt, kTimeout, kPositionRequest); // new goal with null ObjectDetection
+   EXPECT_FALSE(verdict.decide(later(2), std::nullopt).has_value()); // still waiting for the goal to be satisfied
+
+   const std::optional<Outcome> outcome = verdict.decide(later(2 + kTimeout), std::nullopt); // timeout -> goal failure
+   ASSERT_TRUE(outcome.has_value());
+   EXPECT_FALSE(outcome->reached_goal);
+   EXPECT_FALSE(outcome->stalled);
+}
+
 TEST(Verdict, repeats_no_timeout)
 {
    Verdict verdict = accepted(ObjectDetection::DetectedWhileClosing);

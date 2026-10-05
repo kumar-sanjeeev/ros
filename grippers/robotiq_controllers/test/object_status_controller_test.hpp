@@ -448,6 +448,26 @@ TYPED_TEST_P(ObjectStatusControllerTest, waits_for_a_change_for_a_goal_on_anothe
    this->expectStillActive();
 }
 
+TYPED_TEST_P(ObjectStatusControllerTest, aborts_a_repeated_goal_while_the_link_is_down)
+{
+   this->bringUp();
+   this->object_status_ = kMoving;
+   this->sendGoal(0.5);
+   this->object_status_ = kDetectedWhileClosing;
+   ASSERT_TRUE(this->awaitResult().has_value());
+
+   this->object_status_ = kNaN;
+   this->sendGoal(0.5);
+   this->expectStillActive();
+
+   this->update(kPastTimeout);
+   const auto result = this->awaitResult();
+   ASSERT_TRUE(result.has_value());
+   EXPECT_EQ(rclcpp_action::ResultCode::ABORTED, result->code);
+   EXPECT_FALSE(result->result->stalled);
+   EXPECT_FALSE(result->result->reached_goal);
+}
+
 TYPED_TEST_P(ObjectStatusControllerTest, repeats_no_outcome_across_a_deactivation)
 {
    this->bringUp();
@@ -512,6 +532,7 @@ REGISTER_TYPED_TEST_SUITE_P(ObjectStatusControllerTest,
                             takes_a_new_baseline_for_the_next_goal,
                             repeats_the_outcome_for_a_goal_on_the_same_count,
                             waits_for_a_change_for_a_goal_on_another_count,
+                            aborts_a_repeated_goal_while_the_link_is_down,
                             repeats_no_outcome_across_a_deactivation,
                             refuses_a_non_positive_object_status_timeout,
                             refuses_to_activate_without_the_object_status,
