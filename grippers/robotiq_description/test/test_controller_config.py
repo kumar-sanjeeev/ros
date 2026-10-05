@@ -41,6 +41,7 @@
 
 import importlib.util
 import logging
+import math
 import re
 from pathlib import Path
 
@@ -513,9 +514,31 @@ def test_launch_hands_the_humble_controller_the_description_s_closed_position(
 
 # Humble EOL: delete this test.
 @requires_launch
-def test_launch_refuses_a_humble_joint_the_description_does_not_drive(monkeypatch):
-    with pytest.raises(RuntimeError, match="no_such_joint"):
-        spawned_controllers("humble", monkeypatch, gripper_joint="no_such_joint")
+def test_launch_starts_a_humble_joint_the_description_does_not_drive(monkeypatch):
+    spawned = spawned_controllers("humble", monkeypatch, gripper_joint="no_such_joint")
+    params = yaml.safe_load(spawned["robotiq_gripper_controller"])[
+        "robotiq_gripper_controller"
+    ]["ros__parameters"]
+    assert math.isnan(params["gripper_closed_position"])
+
+
+# Humble EOL: delete this test.
+@pytest.mark.parametrize(
+    "hardware",
+    [
+        '<param name="gripper_closed_position"/>',
+        '<param name="gripper_closed_position">  </param>',
+        '<param name="COM_port">/dev/ttyUSB0</param>',
+    ],
+)
+def test_no_closed_position_from_a_description_without_a_value(hardware):
+    urdf = (
+        '<robot name="g"><ros2_control name="g" type="system">'
+        f"<hardware>{hardware}</hardware>"
+        '<joint name="finger_joint"/></ros2_control></robot>'
+    )
+    launch_module = load_launch_module()
+    assert launch_module.closed_position_from_description(urdf, "finger_joint") is None
 
 
 # Humble EOL: delete this test.

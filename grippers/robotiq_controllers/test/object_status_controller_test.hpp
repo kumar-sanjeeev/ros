@@ -84,6 +84,7 @@ struct Config
    bool export_joint_object_status = false;
    bool allow_stalling = false;
    double stall_timeout = 0.0;
+   std::optional<double> closed_position = kClosedPosition;
 
    // The driver's configuration.
    static Config driver() { return Config{}.useObjectStatus().exportJointObjectStatus().allowStalling(); }
@@ -106,6 +107,11 @@ struct Config
    Config& stallTimeout(double seconds)
    {
       stall_timeout = seconds;
+      return *this;
+   }
+   Config& withoutClosedPosition()
+   {
+      closed_position.reset();
       return *this;
    }
 };
@@ -153,8 +159,9 @@ protected:
                                    // Relays a verdict to the client without delaying awaitResult.
                                    rclcpp::Parameter("action_monitor_rate", 1000.0),
                                    // Humble EOL: delete; the robot description below supplies it.
-                                   rclcpp::Parameter("gripper_closed_position", kClosedPosition)},
-                                  gripperUrdf(kJoint, kClosedPosition)));
+                                   rclcpp::Parameter("gripper_closed_position", config.closed_position.value_or(kNaN))},
+                                  config.closed_position ? gripperUrdf(kJoint, *config.closed_position)
+                                                         : gripperUrdf(kJoint, "")));
       executor_.add_node(controller_->get_node()->get_node_base_interface());
    }
 
@@ -448,6 +455,18 @@ TYPED_TEST_P(ObjectStatusControllerTest, waits_for_a_change_for_a_goal_on_anothe
    this->expectStillActive();
 }
 
+TYPED_TEST_P(ObjectStatusControllerTest, waits_for_a_change_without_a_closed_position)
+{
+   this->bringUp(Config::driver().withoutClosedPosition());
+   this->object_status_ = kMoving;
+   this->sendGoal(0.5);
+   this->object_status_ = kDetectedWhileClosing;
+   ASSERT_TRUE(this->awaitResult().has_value());
+
+   this->sendGoal(0.5);
+   this->expectStillActive();
+}
+
 TYPED_TEST_P(ObjectStatusControllerTest, aborts_a_repeated_goal_while_the_link_is_down)
 {
    this->bringUp();
@@ -532,6 +551,7 @@ REGISTER_TYPED_TEST_SUITE_P(ObjectStatusControllerTest,
                             takes_a_new_baseline_for_the_next_goal,
                             repeats_the_outcome_for_a_goal_on_the_same_count,
                             waits_for_a_change_for_a_goal_on_another_count,
+                            waits_for_a_change_without_a_closed_position,
                             aborts_a_repeated_goal_while_the_link_is_down,
                             repeats_no_outcome_across_a_deactivation,
                             refuses_a_non_positive_object_status_timeout,

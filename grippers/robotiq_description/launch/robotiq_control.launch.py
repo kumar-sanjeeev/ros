@@ -184,8 +184,18 @@ class UsesRealGripper(Substitution):
 
 # The driver's gripper_closed_position for the joint, read from the description
 # the launch loads, for the Humble gripper controller, which cannot read it
-# itself. Humble EOL: delete, with the gripper_closed_position launch
-# configuration below.
+# itself. Humble EOL: delete closed_position_from_description and
+# ClosedPosition, with the gripper_closed_position launch configuration below.
+def closed_position_from_description(urdf, joint):
+    """The text of the gripper_closed_position driving `joint`, or None."""
+    for control in ElementTree.fromstring(urdf).iterfind("ros2_control"):
+        if control.find(f"joint[@name='{joint}']") is not None:
+            param = control.find("hardware/param[@name='gripper_closed_position']")
+            if param is not None and param.text and param.text.strip():
+                return param.text.strip()
+    return None
+
+
 class ClosedPosition(Substitution):
     def __init__(self, joint):
         super().__init__()
@@ -193,15 +203,14 @@ class ClosedPosition(Substitution):
 
     def perform(self, context):
         joint = self.joint.perform(context)
-        urdf = ElementTree.fromstring(perform_substitutions(context, [xacro_command()]))
-        for control in urdf.iterfind("ros2_control"):
-            if control.find(f"joint[@name='{joint}']") is not None:
-                param = control.find("hardware/param[@name='gripper_closed_position']")
-                if param is not None:
-                    return param.text.strip()
-        raise RuntimeError(
-            f"no ros2_control block with a gripper_closed_position drives '{joint}'"
-        )
+        urdf = perform_substitutions(context, [xacro_command()])
+        closed_position = closed_position_from_description(urdf, joint)
+        if closed_position is None:
+            launch.logging.get_logger("robotiq_control.launch").warning(
+                f"no gripper_closed_position for '{joint}' in the description"
+            )
+            return ".nan"
+        return closed_position
 
 
 class DefaultGripperJoint(Substitution):
