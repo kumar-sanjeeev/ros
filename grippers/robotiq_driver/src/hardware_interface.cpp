@@ -450,20 +450,20 @@ hardware_interface::return_type RobotiqGripperHardwareInterface::read(const rclc
    }
 
    const Robotiq::GripperStatus status = gripper_->getStatus();
+   const Robotiq::ConnectionState connection = gripper_->connectionState();
    gripper_position_ = jointPositionFromRegister(status.position, parameters_.closed_position);
    // The status block carries no velocity — the gripper reports position and
    // motor current only.
    gripper_velocity_ = 0.0;
    gripper_motor_current_ = motorCurrentFromRegister(status.current);
-   gripper_object_status_ = static_cast<double>(status.gripperStatus.objectDetection());
+   gripper_object_status_ = objectStatusValue(status.gripperStatus.objectDetection(), connection);
    gripper_fault_ = {gripperFaultFromRegister(status.faultStatus),
                      gripperFaultSeverityFromRegister(status.faultStatus)};
 
    // A faulted link recovers by itself on the next successful exchange, so
    // this warns rather than errors; the position above is the last good
    // reading until it does.
-   if(const Robotiq::ConnectionState connection = gripper_->connectionState();
-      connection != Robotiq::ConnectionState::Operational)
+   if(connection != Robotiq::ConnectionState::Operational)
    {
       RCLCPP_WARN_THROTTLE(kLogger,
                            diagnostic_clock_,

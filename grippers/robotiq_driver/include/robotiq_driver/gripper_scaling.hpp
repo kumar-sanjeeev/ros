@@ -41,7 +41,9 @@
 #include <limits>
 #include <optional>
 
+#include <Robotiq/gripper/connection_state.hpp>
 #include <Robotiq/gripper/fault_status.hpp>
+#include <Robotiq/gripper/status.hpp>
 
 namespace robotiq_driver {
 
@@ -51,6 +53,17 @@ namespace robotiq_driver {
 inline constexpr uint8_t kGripperMinPos = 3;
 inline constexpr uint8_t kGripperMaxPos = 230;
 inline constexpr uint8_t kGripperRange = kGripperMaxPos - kGripperMinPos;
+
+// The URDF hardware parameter carrying the closed_position the conversions below take.
+inline constexpr const char* kClosedPositionParam = "gripper_closed_position";
+
+// Whether the conversions below can take \p closed_position: zero and
+// non-finite are the two they cannot divide by. Negative is fine, and is how a
+// joint that closes in the negative direction is described.
+[[nodiscard]] inline bool isValidClosedPosition(double closed_position)
+{
+   return std::isfinite(closed_position) && closed_position != 0.0;
+}
 
 //! Register count (gPO: 0 open .. 255 closed) -> joint position, linear over
 //! the usable travel band. \p closed_position is the joint value at a fully
@@ -115,4 +128,12 @@ inline constexpr double kAmperesPerCurrentCount = 0.010;
 {
    return static_cast<double>(Robotiq::severity(fault.gripperFault()));
 }
+
+[[nodiscard]] inline double objectStatusValue(Robotiq::ObjectDetection detection, Robotiq::ConnectionState connection)
+{
+   return connection == Robotiq::ConnectionState::Operational ? static_cast<double>(detection)
+                                                              : std::numeric_limits<double>::quiet_NaN();
+   //            \__when the connection state is not operational, we must avoid reporting a stale state
+}
+
 } // namespace robotiq_driver
