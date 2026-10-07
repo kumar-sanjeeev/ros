@@ -11,6 +11,7 @@
         sim_joint_states_topic
         use_fake_hardware
         mock_sensor_commands
+        use_dummy
         com_port
         baudrate
         gripper_speed_multiplier
@@ -20,9 +21,6 @@
         gripper_closed_position">
 
         <hardware>
-
-            <!-- Set use_dummy to true to connect to a dummy driver for testing purposes. -->
-            <param name="use_dummy">false</param>
 
             <xacro:if value="${sim_topic_based}">
                 <plugin>topic_based_ros2_control/TopicBasedSystem</plugin>
@@ -40,6 +38,7 @@
             </xacro:if>
             <xacro:unless value="${use_fake_hardware or sim_gazebo or sim_topic_based}">
                 <plugin>robotiq_driver/RobotiqGripperHardwareInterface</plugin>
+                <param name="use_dummy">${use_dummy}</param>
                 <param name="gripper_closed_position">${gripper_closed_position}</param>
                 <param name="COM_port">${com_port}</param>
                 <param name="baudrate">${baudrate}</param>

@@ -14,6 +14,7 @@
         isaac_joint_states:=''
         use_fake_hardware:=false
         mock_sensor_commands:=false
+        use_dummy:=false
         include_ros2_control:=true
         com_port:=/dev/ttyUSB0
         baudrate:=115200
@@ -45,6 +46,7 @@
                 sim_joint_states_topic="${states_topic}"
                 use_fake_hardware="${use_fake_hardware}"
                 mock_sensor_commands="${mock_sensor_commands}"
+                use_dummy="${use_dummy}"
                 com_port="${com_port}"
                 baudrate="${baudrate}"
                 gripper_speed_multiplier="${gripper_speed_multiplier}"
