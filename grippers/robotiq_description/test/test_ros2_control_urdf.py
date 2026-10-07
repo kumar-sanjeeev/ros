@@ -58,6 +58,7 @@ TOPIC_BASED_CONFIG = PKG_DIR / "config" / "robotiq_controllers.topic_based.yaml"
 MODELS = {
     "robotiq_2f_85_gripper.urdf.xacro": "robotiq_85_left_knuckle_joint",
     "robotiq_2f_140_gripper.urdf.xacro": "finger_joint",
+    "robotiq_hand_e_gripper.urdf.xacro": "hande_finger_distance",
 }
 
 MOCK_PLUGIN = "mock_components/GenericSystem"
@@ -66,7 +67,11 @@ TOPIC_BASED_PLUGIN = "topic_based_ros2_control/TopicBasedSystem"
 TOPIC_BASED_ARG = "sim_topic_based:=true"
 
 # Every 2F finger joint except the driven knuckle follows it through <mimic>.
-MIMIC_JOINT_COUNT = 5
+MIMIC_JOINT_COUNTS = {
+    "robotiq_2f_85_gripper.urdf.xacro": 5,
+    "robotiq_2f_140_gripper.urdf.xacro": 5,
+    "robotiq_hand_e_gripper.urdf.xacro": 2,
+}
 
 # Exported by the driver at runtime; needed from the URDF under mock hardware.
 EXTRA_MOCK_COMMAND_INTERFACES = {"set_gripper_max_velocity", "set_gripper_max_effort"}
@@ -237,7 +242,7 @@ def test_sim_topic_based_declares_the_mimic_joints_as_state_only(model, joint):
     # them, but with no command interface: only the knuckle is driven.
     ros2_control = expand(model, False, "sim_topic_based:=true")
     mimic = joints_of(ros2_control) - {joint}
-    assert len(mimic) == MIMIC_JOINT_COUNT
+    assert len(mimic) == MIMIC_JOINT_COUNTS[model]
     for name in mimic:
         assert command_interfaces_of(ros2_control, name) == set()
         assert state_interfaces_of(ros2_control, name) == {"position", "velocity"}
@@ -305,3 +310,40 @@ def test_sim_controller_config_claims_only_what_the_sim_urdf_declares(model, joi
     assert "max_effort_interface" not in params
     assert "max_velocity_interface" not in params
     assert set(params["state_interfaces"]) <= state_interfaces_of(ros2_control, joint)
+
+
+@requires_xacro
+def test_hand_e_uses_prismatic_distance_and_parallel_mimics():
+    result = subprocess.run(
+        ["xacro", str(URDF_DIR / "robotiq_hand_e_gripper.urdf.xacro")],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    robot = ET.fromstring(result.stdout)
+    distance = robot.find("joint[@name='hande_finger_distance']")
+    assert distance is not None
+    assert distance.get("type") == "prismatic"
+    assert distance.find("limit").attrib == {
+        "effort": "185",
+        "lower": "0.0",
+        "upper": "0.05",
+        "velocity": "0.15",
+    }
+    for side in ("left", "right"):
+        mimic = robot.find(f"joint[@name='hande_{side}_finger_joint']/mimic")
+        assert mimic is not None
+        assert mimic.attrib == {
+            "joint": "hande_finger_distance",
+            "multiplier": "-0.5",
+            "offset": "0.025",
+        }
+
+
+@requires_xacro
+def test_hand_e_driver_profile_and_dummy_reach_hardware():
+    control = expand("robotiq_hand_e_gripper.urdf.xacro", False, "use_dummy:=true")
+    assert hardware_param(control, "use_dummy").lower() == "true"
+    assert hardware_param(control, "gripper_closed_position") == "0.05"
+    assert hardware_param(control, "gripper_max_speed") == "0.15"
+    assert hardware_param(control, "gripper_max_force") == "185.0"

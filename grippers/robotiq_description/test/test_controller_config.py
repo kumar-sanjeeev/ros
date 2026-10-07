@@ -89,7 +89,7 @@ MOCK_OF = {
 # given. Kept in sync by robotiq_driver's test_robotiq_gripper_hardware_interface,
 # which asserts the hardware exports exactly these.
 JOINT = "robotiq_85_left_knuckle_joint"
-GRIPPER_JOINTS = (JOINT, "finger_joint")
+GRIPPER_JOINTS = (JOINT, "finger_joint", "hande_finger_distance")
 UPDATE_RATE_HZ = 500
 
 # Every key a controller_manager block may carry besides the controllers, per
@@ -238,7 +238,11 @@ def test_launch_description_builds():
 
 @pytest.mark.parametrize(
     "gripper_model,expected",
-    [("2f_85", JOINT), ("2f_140", "finger_joint")],
+    [
+        ("2f_85", JOINT),
+        ("2f_140", "finger_joint"),
+        ("hand_e", "hande_finger_distance"),
+    ],
 )
 def test_launch_defaults_the_joint_from_the_gripper_model(gripper_model, expected):
     launch_module = load_launch_module()
@@ -258,14 +262,23 @@ def test_launch_restricts_gripper_model_to_the_known_joints():
 
 
 @pytest.mark.parametrize(
-    "use_fake_hardware,sim_topic_based",
-    [("false", "false"), ("true", "false"), ("false", "true")],
+    "use_fake_hardware,sim_topic_based,use_dummy",
+    [
+        ("false", "false", "false"),
+        ("true", "false", "false"),
+        ("false", "true", "false"),
+        ("false", "false", "true"),
+    ],
 )
-def test_launch_accepts_at_most_one_hardware_flag(use_fake_hardware, sim_topic_based):
+def test_launch_accepts_at_most_one_hardware_flag(
+    use_fake_hardware, sim_topic_based, use_dummy
+):
     launch_module = load_launch_module()
     context = LaunchContext()
     context.launch_configurations.update(
-        use_fake_hardware=use_fake_hardware, sim_topic_based=sim_topic_based
+        use_fake_hardware=use_fake_hardware,
+        sim_topic_based=sim_topic_based,
+        use_dummy=use_dummy,
     )
     launch_module.reject_conflicting_hardware_flags(context)
 
@@ -276,7 +289,7 @@ def test_launch_rejects_fake_hardware_together_with_sim_topic_based():
     launch_module = load_launch_module()
     context = LaunchContext()
     context.launch_configurations.update(
-        use_fake_hardware="true", sim_topic_based="true"
+        use_fake_hardware="true", sim_topic_based="true", use_dummy="false"
     )
     with pytest.raises(RuntimeError, match="use_fake_hardware and sim_topic_based"):
         launch_module.reject_conflicting_hardware_flags(context)
@@ -341,6 +354,7 @@ def test_launch_forwards_the_gripper_model_to_xacro():
         model="/x/gripper.urdf.xacro",
         gripper_model="2f_140",
         use_fake_hardware="true",
+        use_dummy="false",
         com_port="/dev/null",
         baudrate="115200",
         sim_topic_based="false",
@@ -423,7 +437,7 @@ def nodes_running(entities, context, executable):
 
 
 def spawner_commands(distro, monkeypatch, **launch_arguments):
-    """Yield (controller, resolved command line) for every spawner that starts.
+    """Yield (controller, resolved command line) for every controller spawned.
 
     A generator so the entities, and with them the ParameterFile's temporary
     file, outlive the caller's look at each command.
@@ -433,7 +447,8 @@ def spawner_commands(distro, monkeypatch, **launch_arguments):
     entities, context = launch_entities(distro, monkeypatch, **launch_arguments)
     for spawner in nodes_running(entities, context, "spawner"):
         cmd = [perform_substitutions(context, part) for part in spawner.cmd]
-        yield cmd[1], cmd
+        for controller in cmd[1 : cmd.index("--controller-manager")]:
+            yield controller, cmd
 
 
 def spawned_controllers(distro, monkeypatch, **launch_arguments):
@@ -661,6 +676,26 @@ def test_spawners_outwait_a_gripper_recovering_from_a_fault(monkeypatch):
         assert cmd[cmd.index("--controller-manager-timeout") + 1] == timeout
 
 
+@requires_launch
+@pytest.mark.parametrize(
+    "launch_arguments,expected",
+    [
+        ({}, 4),
+        ({"use_fake_hardware": "true"}, 4),
+        ({"sim_topic_based": "true"}, 3),
+    ],
+)
+def test_launch_uses_one_spawner_per_hardware_mode(
+    monkeypatch, launch_arguments, expected
+):
+    from launch.utilities import perform_substitutions
+
+    entities, context = launch_entities("jazzy", monkeypatch, **launch_arguments)
+    (spawner,) = nodes_running(entities, context, "spawner")
+    command = [perform_substitutions(context, part) for part in spawner.cmd]
+    assert command.index("--controller-manager") - 1 == expected
+
+
 PROCESS = {"name": "p", "cmd": ["p"], "cwd": None, "env": None, "pid": 1}
 
 
@@ -720,12 +755,10 @@ CONTROLLER_STEP = (
 
 
 @requires_launch
-@pytest.mark.parametrize("returncodes", [[1, 1, 1, 1], [0, 1, 0, 0], [1, 0, 0, 0]])
-def test_launch_hints_once_after_the_last_spawner_exits(monkeypatch, returncodes):
-    emitted = drive_spawner_exits(monkeypatch, returncodes)
-    assert hints(emitted)[:-1] == [[], [], []]
-    assert shutdowns(emitted) == [[], [], [], []]
-    (hint,) = hints(emitted)[-1]
+def test_launch_hints_when_the_grouped_spawner_fails(monkeypatch):
+    emitted = drive_spawner_exits(monkeypatch, [1])
+    assert shutdowns(emitted) == [[]]
+    (hint,) = hints(emitted)[0]
     # Verified on a 2F-85: the first step alone leaves the controllers loaded
     # but inactive; the second is what configures and activates them again.
     assert hint.index(HARDWARE_STEP) < hint.index(CONTROLLER_STEP)
@@ -735,23 +768,24 @@ def test_launch_hints_once_after_the_last_spawner_exits(monkeypatch, returncodes
 def test_launch_hints_the_spawners_exact_command_line(monkeypatch):
     # Same arguments as the spawners themselves, so the two cannot drift; the
     # param file is the one the first spawn used, and Lyrical needs it.
-    emitted = drive_spawner_exits(monkeypatch, [1, 1, 1, 1])
-    (hint,) = hints(emitted)[-1]
+    emitted = drive_spawner_exits(monkeypatch, [1])
+    (hint,) = hints(emitted)[0]
     rerun = hint[hint.index(CONTROLLER_STEP) :]
     assert "--controller-manager /controller_manager" in rerun
-    assert f"--controller-manager-timeout {ACTIVATION_TIMEOUT_S}" in rerun
+    timeout = load_launch_module().CONTROLLER_MANAGER_TIMEOUT
+    assert f"--controller-manager-timeout {timeout}" in rerun
     assert re.search(r"--param-file /\S+", rerun)
 
 
 @requires_launch
 def test_launch_stays_quiet_when_every_spawner_succeeds(monkeypatch):
-    assert drive_spawner_exits(monkeypatch, [0, 0, 0, 0]) == [[], [], [], []]
+    assert drive_spawner_exits(monkeypatch, [0]) == [[]]
 
 
 @requires_launch
 def test_launch_stays_quiet_when_the_spawners_are_killed(monkeypatch):
     # SIGINT from a Ctrl-C or from the launch's own Shutdown is not a failure.
-    assert drive_spawner_exits(monkeypatch, [-2, -2, -2, -2]) == [[], [], [], []]
+    assert drive_spawner_exits(monkeypatch, [-2]) == [[]]
 
 
 @requires_launch
@@ -769,8 +803,8 @@ def test_launch_stays_quiet_once_shutting_down(monkeypatch):
 @pytest.mark.parametrize(
     "launch_arguments,returncodes",
     [
-        ({"sim_topic_based": "true"}, [1, 1, 1]),
-        ({"use_fake_hardware": "true"}, [1, 1, 1, 1]),
+        ({"sim_topic_based": "true"}, [1]),
+        ({"use_fake_hardware": "true"}, [1]),
     ],
 )
 def test_launch_gives_no_reconnect_advice_without_a_gripper(
@@ -786,11 +820,10 @@ def test_launch_gives_no_reconnect_advice_without_a_gripper(
 def test_launch_ends_on_humble_where_the_node_cannot_survive(monkeypatch):
     # Humble's controller_manager aborts, or wedges, on a failed connect, so the
     # spawners' failure is the only exit signal the launch can act on there.
-    emitted = drive_spawner_exits(monkeypatch, [1, 1, 1, 1], distro="humble")
-    assert hints(emitted)[:-1] == [[], [], []]
-    assert "relaunch" in hints(emitted)[-1][0]
-    assert CONTROLLER_STEP not in hints(emitted)[-1][0]
-    assert [len(s) for s in shutdowns(emitted)] == [0, 0, 0, 1]
+    emitted = drive_spawner_exits(monkeypatch, [1], distro="humble")
+    assert "relaunch" in hints(emitted)[0][0]
+    assert CONTROLLER_STEP not in hints(emitted)[0][0]
+    assert [len(s) for s in shutdowns(emitted)] == [1]
 
 
 @requires_launch
@@ -798,19 +831,19 @@ def test_launch_still_ends_on_humble_without_a_gripper(monkeypatch):
     # No reconnect advice under the mock, but shutdown_on_failure is not about
     # the gripper and must hold.
     emitted = drive_spawner_exits(
-        monkeypatch, [1, 1, 1, 1], distro="humble", use_fake_hardware="true"
+        monkeypatch, [1], distro="humble", use_fake_hardware="true"
     )
-    assert hints(emitted) == [[], [], [], []]
-    assert [len(s) for s in shutdowns(emitted)] == [0, 0, 0, 1]
+    assert hints(emitted) == [[]]
+    assert [len(s) for s in shutdowns(emitted)] == [1]
 
 
 @requires_launch
 def test_launch_keeps_running_on_humble_when_asked(monkeypatch):
     emitted = drive_spawner_exits(
-        monkeypatch, [1, 1, 1, 1], distro="humble", shutdown_on_failure="false"
+        monkeypatch, [1], distro="humble", shutdown_on_failure="false"
     )
-    assert [len(h) for h in hints(emitted)] == [0, 0, 0, 1]
-    assert shutdowns(emitted) == [[], [], [], []]
+    assert [len(h) for h in hints(emitted)] == [1]
+    assert shutdowns(emitted) == [[]]
 
 
 def control_node_exit(monkeypatch, distro="jazzy", **launch_arguments):
