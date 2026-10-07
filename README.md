@@ -7,7 +7,7 @@ ROS packages for Robotiq grippers and sensors.
 | Package | Description | ROS Version |
 |---|---|---|
 | [robotiq_tsf](robotiq_tsf/) | TSF-85 tactile sensor driver | ROS 2 Humble / Jazzy / Lyrical ([main](https://github.com/robotiq/ros/tree/main)) / ROS 1 Noetic ([noetic](https://github.com/robotiq/ros/tree/noetic)) |
-| [grippers](grippers/) | ROS 2 `ros2_control` driver for Robotiq 2F adaptive grippers (2F-85, 2F-140), on the [Robotiq C++ SDK](https://github.com/Robotiq/grippers) | ROS 2 Humble / Jazzy / Lyrical |
+| [grippers](grippers/) | ROS 2 `ros2_control` driver for Robotiq grippers (2F-85, 2F-140, Hand-E), on the [Robotiq C++ SDK](https://github.com/Robotiq/grippers) | ROS 2 Humble / Jazzy / Lyrical |
 
 ## Supported ROS 2 distros
 
@@ -144,19 +144,21 @@ In the combined launch the pad frames are TF-mounted on the gripper fingertip li
 
 ## Grippers
 
-ROS 2 `ros2_control` driver for Robotiq 2F adaptive grippers, under [`grippers/`](grippers/).
+ROS 2 `ros2_control` driver for Robotiq grippers, under [`grippers/`](grippers/).
 
-Descriptions ship for the **2F-85** and the **2F-140**; `robotiq_control.launch.py` defaults to the
-2F-85, so pass `gripper_model:=2f_140` for a 2F-140. That argument selects the gripper macro in the
-xacro and the joint the controller drives (`robotiq_85_left_knuckle_joint` or `finger_joint`); a
+Descriptions ship for the **2F-85**, **2F-140**, and **Hand-E**; `robotiq_control.launch.py` defaults
+to the 2F-85, so pass `gripper_model:=2f_140` or `gripper_model:=hand_e`. That argument selects the
+gripper macro in the xacro and the joint the controller drives (`robotiq_85_left_knuckle_joint`,
+`finger_joint`, or `hande_finger_distance`); a
 custom description keeps `model:=<path>` and sets `gripper_joint` explicitly. The controller configs
 in `config/` write that joint as `$(var gripper_joint)`, which only the launch resolves — loaded
 directly into your own `ros2_control_node` they are not valid as they stand. Hardware validation to
-date is on a 2F-85 — the 2F-140 description ships untested against hardware.
+date is on a 2F-85 — the 2F-140 and Hand-E descriptions ship untested against hardware.
 
-The driver itself is model-agnostic: it needs a serial link and the `gripper_closed_position` of
-whatever is attached. A **Hand-E** therefore works once you supply a URDF for it, but no Hand-E
-description ships here yet.
+The Hand-E is modelled as a parallel-stroke gripper. Its command joint is prismatic and reports
+finger distance in metres: `0.0` is fully open and `0.050` is fully closed. Its shipped profile uses
+the product-rated `0.150 m/s` maximum speed and `185 N` maximum grip force. The visual fingers mimic
+that command rather than approximating the motion with a knuckle angle.
 
 The driver runs on the [Robotiq C++ grippers SDK](https://github.com/Robotiq/grippers), which arrives as
 the `extern/grippers` submodule — so clone with `--recurse-submodules`. The SDK owns the serial link
@@ -277,6 +279,8 @@ Bring up a gripper:
 ```bash
 ros2 launch robotiq_description robotiq_control.launch.py                    # real hw, com_port:=/dev/ttyUSB0
 ros2 launch robotiq_description robotiq_control.launch.py use_fake_hardware:=true   # ros2_control mock
+ros2 launch robotiq_description robotiq_control.launch.py use_dummy:=true           # SDK dummy through the driver
+ros2 launch robotiq_description robotiq_control.launch.py gripper_model:=hand_e     # Hand-E
 ros2 launch robotiq_description robotiq_control.launch.py launch_rviz:=true         # + RViz visualization
 ros2 launch robotiq_description robotiq_control.launch.py baudrate:=<rate>
 ros2 launch robotiq_description robotiq_control.launch.py sim_topic_based:=true \
@@ -311,6 +315,7 @@ six joint names for the model you launch, each with your `prefix`, or nothing mo
 |---|---|---|
 | `2f_85` | `robotiq_85_left_knuckle_joint` | `robotiq_85_right_knuckle_joint`, `robotiq_85_left_inner_knuckle_joint`, `robotiq_85_right_inner_knuckle_joint`, `robotiq_85_left_finger_tip_joint`, `robotiq_85_right_finger_tip_joint` |
 | `2f_140` | `finger_joint` | `right_outer_knuckle_joint`, `left_inner_knuckle_joint`, `right_inner_knuckle_joint`, `left_inner_finger_joint`, `right_inner_finger_joint` |
+| `hand_e` | `hande_finger_distance` | `hande_left_finger_joint`, `hande_right_finger_joint` |
 
 <!-- Humble EOL: simplify — the binary-release exception goes with it. -->
 The plugin is not a dependency of this package. On Humble install
@@ -406,8 +411,8 @@ None of the four beyond `position` and `velocity` are `ros2_control` standard in
 
 | Parameter | Default | Description |
 |---|---|---|
-| `gripper_closed_position` | *required* | Joint angle in radians at a fully closed gripper — the scale of the whole position mapping |
-| `COM_port` | `/dev/ttyUSB0` | Serial port |
+| `gripper_closed_position` | *required* | Driven-joint position at a fully closed gripper — radians for the 2F models, metres for Hand-E; the scale of the whole position mapping |
+| `COM_port` | `/dev/ttyUSB0` | Serial port; use `/tmp/ttyUR` for a gripper connected through a Universal Robots Tool Communication Forwarder |
 | `baudrate` | `115200` | Must match the gripper's persisted setting, which is why it is also a launch argument, `baudrate:=<rate>`. Rejected outside 1..1000000. Most units stay at 115200; the gripper's own rate is changed in the Robotiq User Interface (*Modbus RTU Parameters*), not from here, and the gripper must be rebooted afterwards |
 | `timeout` | `0.5` | Per-transaction serial timeout, in seconds |
 | `slave_address` | `0x09` | Modbus slave address; `0x09` as the manual prints it, a bare number as the decimal it looks like |
@@ -441,7 +446,7 @@ To inspect the model in RViz with no gripper attached (no `ros2_control`), use t
 ros2 launch robotiq_description view_gripper.launch.py
 ```
 
-Drag the `robotiq_85_left_knuckle_joint` slider; the five finger joints follow it via URDF `mimic` (≈ `0.0` open → ~`0.8` closed).
+For Hand-E, pass `model:=$(ros2 pkg prefix robotiq_description)/share/robotiq_description/urdf/robotiq_hand_e_gripper.urdf.xacro` and drag the `hande_finger_distance` slider (`0.0` m open → `0.050` m closed). The two finger joints follow it via URDF `mimic`.
 
 Goal-based commanding also works without hardware: `robotiq_control.launch.py use_fake_hardware:=true launch_rviz:=true` brings up all four controllers against `mock_components/GenericSystem`, and `gripper_cmd` goals drive the model — the five finger joints follow the knuckle via URDF `mimic`, exactly as on hardware. Use the slider above when you want to pose the model by hand instead.
 
