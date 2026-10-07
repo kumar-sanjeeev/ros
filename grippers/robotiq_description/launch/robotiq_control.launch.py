@@ -101,7 +101,7 @@ class ControllersFile(Substitution):
 
 # The xacro emits one <plugin> per flag that is set, and ros2_control_node
 # accepts only one, so two flags would fail late and obscurely.
-HARDWARE_FLAGS = ("use_fake_hardware", "sim_topic_based")
+HARDWARE_FLAGS = ("use_fake_hardware", "sim_topic_based", "use_dummy")
 
 # PickNik's names for the topic-based path, released in 1.1.0. Each maps to its
 # replacement and, for the topics, to the default it had then, which sim_isaac
@@ -158,7 +158,7 @@ class ParameterFilePath(Substitution):
         return str(self.parameter_file.evaluate(context))
 
 
-CONTROLLER_MANAGER_TIMEOUT = "15"
+CONTROLLER_MANAGER_TIMEOUT = "60"
 
 
 def hardware_component_names(context):
@@ -173,6 +173,7 @@ def hardware_component_names(context):
 GRIPPER_JOINTS = {
     "2f_85": "robotiq_85_left_knuckle_joint",
     "2f_140": "finger_joint",
+    "hand_e": "hande_finger_distance",
 }
 
 
@@ -234,6 +235,9 @@ def xacro_command():
             " ",
             "use_fake_hardware:=",
             LaunchConfiguration("use_fake_hardware"),
+            " ",
+            "use_dummy:=",
+            LaunchConfiguration("use_dummy"),
             " ",
             "com_port:=",
             LaunchConfiguration("com_port"),
@@ -318,6 +322,13 @@ def generate_launch_description():
             name="use_fake_hardware",
             default_value="false",
             description="Use ros2_control mock (fake) hardware instead of a real gripper",
+        )
+    )
+    args.append(
+        launch.actions.DeclareLaunchArgument(
+            name="use_dummy",
+            default_value="false",
+            description="Use the SDK dummy backend through the real driver interface",
         )
     )
     args.append(
@@ -418,24 +429,33 @@ def generate_launch_description():
             ParameterFilePath(initial_joint_controllers),
         ]
 
-    def spawner(controller_name, condition=None):
+    def spawner(*controller_names, condition=None):
         return launch_ros.actions.Node(
             package="controller_manager",
             executable="spawner",
-            arguments=spawner_arguments(controller_name),
+            arguments=spawner_arguments(*controller_names),
             condition=condition,
         )
 
     # The reactivate_gripper GPIO the activation controller claims is declared for
     # the driver and the mock only; the topic_based plugin has nothing to reactivate.
-    spawned_controllers = {
-        "joint_state_broadcaster": None,
-        "robotiq_gripper_controller": None,
-        "robotiq_activation_controller": UnlessCondition(topic_based),
-        "robotiq_gripper_status_broadcaster": None,
-    }
+    # Spawn each mode's complete set in one process. Four concurrent spawners
+    # contend for controller_manager's lock on Jazzy and can leave a controller
+    # loaded but unconfigured when a retry races the original load request.
+    common_controllers = (
+        "joint_state_broadcaster",
+        "robotiq_gripper_controller",
+        "robotiq_gripper_status_broadcaster",
+    )
+    driver_controllers = (
+        common_controllers[0],
+        common_controllers[1],
+        "robotiq_activation_controller",
+        common_controllers[2],
+    )
     spawners = [
-        spawner(name, condition) for name, condition in spawned_controllers.items()
+        spawner(*driver_controllers, condition=UnlessCondition(topic_based)),
+        spawner(*common_controllers, condition=IfCondition(topic_based)),
     ]
 
     def starts(action, context):
@@ -460,7 +480,11 @@ def generate_launch_description():
         Bringing the component back leaves the controllers loaded but inactive;
         re-running the spawners is what configures and activates them again.
         """
-        names = [n for n, s in zip(spawned_controllers, spawners) if starts(s, context)]
+        names = (
+            common_controllers
+            if is_set(context, "sim_topic_based")
+            else driver_controllers
+        )
         arguments = " ".join(
             perform_substitutions(context, normalize_to_list_of_substitutions(a))
             for a in spawner_arguments(*names)
