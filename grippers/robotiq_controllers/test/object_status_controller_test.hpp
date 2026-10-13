@@ -68,7 +68,7 @@ constexpr double kWithinTimeout = kObjectStatusTimeout / 2;
 constexpr double kPastTimeout = kObjectStatusTimeout + 1.0;
 constexpr double kClosedPosition = 0.8;
 // One register count of the driver's conversion, in joint units.
-constexpr double kOneCount = kClosedPosition / robotiq_driver::kGripperRange;
+constexpr double kOneCount = kClosedPosition / Robotiq::profiles::k2F85.registerPositionRange();
 // A stock stall timeout no test outlasts.
 constexpr double kStockStallNever = 3600.0;
 
@@ -85,6 +85,7 @@ struct Config
    bool allow_stalling = false;
    double stall_timeout = 0.0;
    std::optional<double> closed_position = kClosedPosition;
+   std::string gripper_model = "2f_85";
 
    // The driver's configuration.
    static Config driver() { return Config{}.useObjectStatus().exportJointObjectStatus().allowStalling(); }
@@ -112,6 +113,11 @@ struct Config
    Config& withoutClosedPosition()
    {
       closed_position.reset();
+      return *this;
+   }
+   Config& handE()
+   {
+      gripper_model = "hand_e";
       return *this;
    }
 };
@@ -159,9 +165,11 @@ protected:
                                    // Relays a verdict to the client without delaying awaitResult.
                                    rclcpp::Parameter("action_monitor_rate", 1000.0),
                                    // Humble EOL: delete; the robot description below supplies it.
-                                   rclcpp::Parameter("gripper_closed_position", config.closed_position.value_or(kNaN))},
-                                  config.closed_position ? gripperUrdf(kJoint, *config.closed_position)
-                                                         : gripperUrdf(kJoint, "")));
+                                   rclcpp::Parameter("gripper_closed_position", config.closed_position.value_or(kNaN)),
+                                   rclcpp::Parameter("gripper_model", config.gripper_model)},
+                                  config.closed_position
+                                     ? gripperUrdf(kJoint, *config.closed_position, config.gripper_model)
+                                     : gripperUrdf(kJoint, "")));
       executor_.add_node(controller_->get_node()->get_node_base_interface());
    }
 
@@ -455,6 +463,21 @@ TYPED_TEST_P(ObjectStatusControllerTest, waits_for_a_change_for_a_goal_on_anothe
    this->expectStillActive();
 }
 
+TYPED_TEST_P(ObjectStatusControllerTest, uses_the_hand_e_register_profile_for_repeated_goals)
+{
+   this->bringUp(Config::driver().handE());
+   this->object_status_ = kMoving;
+   this->sendGoal(0.5);
+   this->object_status_ = kDetectedWhileClosing;
+   ASSERT_TRUE(this->awaitResult().has_value());
+
+   // These truncate to the same Hand-E count, but to different 2F counts.
+   this->sendGoal(0.501);
+   const auto result = this->awaitResult();
+   ASSERT_TRUE(result.has_value());
+   EXPECT_TRUE(result->result->stalled);
+}
+
 TYPED_TEST_P(ObjectStatusControllerTest, waits_for_a_change_without_a_closed_position)
 {
    this->bringUp(Config::driver().withoutClosedPosition());
@@ -551,6 +574,7 @@ REGISTER_TYPED_TEST_SUITE_P(ObjectStatusControllerTest,
                             takes_a_new_baseline_for_the_next_goal,
                             repeats_the_outcome_for_a_goal_on_the_same_count,
                             waits_for_a_change_for_a_goal_on_another_count,
+                            uses_the_hand_e_register_profile_for_repeated_goals,
                             waits_for_a_change_without_a_closed_position,
                             aborts_a_repeated_goal_while_the_link_is_down,
                             repeats_no_outcome_across_a_deactivation,

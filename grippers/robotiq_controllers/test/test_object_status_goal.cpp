@@ -283,6 +283,18 @@ TEST(ClosedPositionFromUrdf, finds_nothing_in_a_malformed_description)
    EXPECT_FALSE(closedPositionFromUrdf("", "finger_joint"));
 }
 
+TEST(GripperModelFromUrdf, reads_the_driver_parameter_of_the_joint_s_hardware)
+{
+   EXPECT_EQ(
+      "hand_e",
+      gripperModelFromUrdf(robotiq_controllers::test::gripperUrdf("finger_joint", 0.05, "hand_e"), "finger_joint"));
+}
+
+TEST(GripperModelFromUrdf, finds_nothing_for_a_legacy_description)
+{
+   EXPECT_FALSE(gripperModelFromUrdf(robotiq_controllers::test::gripperUrdf("finger_joint", ""), "finger_joint"));
+}
+
 TEST(InterfaceName, joins_the_joint_and_the_field)
 {
    EXPECT_EQ("finger_joint/object_status", interfaceName("finger_joint"));

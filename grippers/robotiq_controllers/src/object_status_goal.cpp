@@ -112,6 +112,28 @@ std::optional<double> closedPositionFromUrdf(const std::string& urdf, const std:
    return std::nullopt;
 }
 
+std::optional<std::string> gripperModelFromUrdf(const std::string& urdf, const std::string& joint)
+{
+   tinyxml2::XMLDocument document;
+   if(document.Parse(urdf.c_str()) != tinyxml2::XML_SUCCESS || !document.RootElement())
+   {
+      return std::nullopt;
+   }
+   for(const tinyxml2::XMLElement* control = document.RootElement()->FirstChildElement("ros2_control"); control;
+       control = control->NextSiblingElement("ros2_control"))
+   {
+      if(drivesJoint(*control, joint))
+      {
+         if(const tinyxml2::XMLElement* param = hardwareParameter(*control, robotiq_driver::kGripperModelParam))
+         {
+            const char* model = param->GetText();
+            return model && *model ? std::optional<std::string>(model) : std::nullopt;
+         }
+      }
+   }
+   return std::nullopt;
+}
+
 std::optional<std::reference_wrapper<hardware_interface::LoanedStateInterface>> findInterface(
    std::vector<hardware_interface::LoanedStateInterface>& interfaces,
    const std::string& joint,

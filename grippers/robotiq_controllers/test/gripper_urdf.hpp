@@ -35,7 +35,9 @@
 
 namespace robotiq_controllers::test {
 
-inline std::string gripperUrdf(const std::string& joint, const std::string& closed_position_param)
+inline std::string gripperUrdf(const std::string& joint,
+                               const std::string& closed_position_param,
+                               const std::string& gripper_model_param = "")
 {
    return R"(<?xml version="1.0"?>
 <robot name="gripper">
@@ -52,7 +54,7 @@ inline std::string gripperUrdf(const std::string& joint, const std::string& clos
     <hardware>
       <plugin>robotiq_driver/RobotiqGripperHardwareInterface</plugin>
       )" + closed_position_param
-        +
+        + gripper_model_param +
           R"(
     </hardware>
     <joint name=")"
@@ -64,9 +66,12 @@ inline std::string gripperUrdf(const std::string& joint, const std::string& clos
 </robot>)";
 }
 
-inline std::string gripperUrdf(const std::string& joint, double closed_position)
+inline std::string gripperUrdf(const std::string& joint,
+                               double closed_position,
+                               const std::string& gripper_model = "2f_85")
 {
    return gripperUrdf(joint,
-                      R"(<param name="gripper_closed_position">)" + std::to_string(closed_position) + "</param>");
+                      R"(<param name="gripper_closed_position">)" + std::to_string(closed_position) + "</param>",
+                      R"(<param name="gripper_model">)" + gripper_model + "</param>");
 }
 } // namespace robotiq_controllers::test

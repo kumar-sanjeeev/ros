@@ -132,6 +132,7 @@ double asPositiveDouble(const std::string& text)
    }
    return value;
 }
+
 } // namespace
 
 GripperParameters parseParameters(const hardware_interface::HardwareInfo& info, const rclcpp::Logger& logger)
@@ -170,6 +171,17 @@ GripperParameters parseParameters(const hardware_interface::HardwareInfo& info, 
    if(!isValidClosedPosition(parameters.closed_position))
    {
       throw std::invalid_argument("gripper_closed_position must be a non-zero, finite joint value");
+   }
+
+   const auto model = info.hardware_parameters.find(kGripperModelParam);
+   if(model != info.hardware_parameters.end())
+   {
+      const std::optional<Robotiq::DeviceProfile> profile = profileForModel(model->second);
+      if(!profile)
+      {
+         throw std::invalid_argument("unsupported gripper_model '" + model->second + "'");
+      }
+      parameters.profile = *profile;
    }
 
    parameters.max_speed = parameterOr<double>(info, logger, kMaxSpeedParam, parameters.max_speed, asPositiveDouble);

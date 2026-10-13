@@ -101,6 +101,11 @@ install(
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
 
+  # Jazzy's cppcheck cannot parse several GoogleTest macros and reports them
+  # as syntax errors. Analyze production sources here; the test sources are
+  # still compiled with the same warning flags above.
+  set(ament_cmake_cppcheck_ADDITIONAL_EXCLUDE "test/*")
+
   # the following line skips the linter which checks for copyrights
   # comment the line when a copyright and license is added to all source files
   set(ament_cmake_copyright_FOUND TRUE)

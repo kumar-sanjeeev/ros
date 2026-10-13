@@ -56,6 +56,10 @@ std::string interfaceName(const std::string& joint);
 // that drives it; nothing when no such block carries one the driver would take.
 std::optional<double> closedPositionFromUrdf(const std::string& urdf, const std::string& joint);
 
+// The driver's model identifier for \p joint, from the same hardware block;
+// nothing for a legacy description that does not carry one.
+std::optional<std::string> gripperModelFromUrdf(const std::string& urdf, const std::string& joint);
+
 // The joint's object_status among a controller's loaned state interfaces; logs
 // what to do when there is none.
 std::optional<std::reference_wrapper<hardware_interface::LoanedStateInterface>> findInterface(

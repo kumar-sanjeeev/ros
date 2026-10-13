@@ -91,6 +91,7 @@ public:
             // Humble EOL: delete; the URDF supplies it from Jazzy on.
             this->template auto_declare<double>(robotiq_driver::kClosedPositionParam,
                                                 std::numeric_limits<double>::quiet_NaN());
+            this->template auto_declare<std::string>(robotiq_driver::kGripperModelParam, "2f_85");
          }
       }
       catch(const std::exception& e)
@@ -119,6 +120,12 @@ public:
          return controller_interface::CallbackReturn::ERROR;
       }
       closed_position_ = closedPosition();
+      const std::optional<Robotiq::DeviceProfile> profile = deviceProfile();
+      if(!profile)
+      {
+         return controller_interface::CallbackReturn::ERROR;
+      }
+      profile_ = *profile;
       if(use_object_status_ && !closed_position_)
       {
          RCLCPP_WARN(this->get_node()->get_logger(),
@@ -191,7 +198,7 @@ private:
       {
          return std::nullopt;
       }
-      return robotiq_driver::registerFromJointPosition(*position, *closed_position_);
+      return robotiq_driver::registerFromJointPosition(*position, *closed_position_, profile_);
    }
 
    std::optional<double> closedPosition()
@@ -207,6 +214,30 @@ private:
             this->get_node()->get_parameter(robotiq_driver::kClosedPositionParam).as_double();
          return robotiq_driver::isValidClosedPosition(closed_position) ? std::optional(closed_position) : std::nullopt;
       }
+   }
+
+   std::optional<Robotiq::DeviceProfile> deviceProfile()
+   {
+      std::string model = "2f_85";
+      if constexpr(compat::detail::HasRobotDescription<Base>::value)
+      {
+         model = object_status_goal::gripperModelFromUrdf(this->get_robot_description(), this->params_.joint)
+                    .value_or(model);
+      }
+      else
+      {
+         // Humble EOL: delete this branch.
+         model = this->get_node()->get_parameter(robotiq_driver::kGripperModelParam).as_string();
+      }
+      const std::optional<Robotiq::DeviceProfile> profile = robotiq_driver::profileForModel(model);
+      if(!profile)
+      {
+         RCLCPP_ERROR(this->get_node()->get_logger(),
+                      "Unsupported %s '%s'.",
+                      robotiq_driver::kGripperModelParam,
+                      model.c_str());
+      }
+      return profile;
    }
 
    void finish(const RealtimeGoalHandlePtr& goal, const object_status_goal::Outcome& outcome)
@@ -233,6 +264,7 @@ private:
    bool use_object_status_ = false;
    double object_status_timeout_ = 0.0;
    std::optional<double> closed_position_;
+   Robotiq::DeviceProfile profile_ = Robotiq::profiles::k2F85;
    std::optional<std::reference_wrapper<hardware_interface::LoanedStateInterface>> object_status_;
    RealtimeGoalHandlePtr tracked_goal_;
    object_status_goal::Verdict verdict_;

@@ -83,6 +83,12 @@ HARDWARE_ONLY_STATE_INTERFACES = {
     "gripper_fault_severity",
 }
 
+HARDWARE_MODELS = {
+    "robotiq_2f_85_gripper.urdf.xacro": "2f_85",
+    "robotiq_2f_140_gripper.urdf.xacro": "2f_140",
+    "robotiq_hand_e_gripper.urdf.xacro": "hand_e",
+}
+
 requires_xacro = pytest.mark.skipif(
     shutil.which("xacro") is None, reason="xacro not on PATH"
 )
@@ -113,6 +119,12 @@ def plugin_of(ros2_control):
 def hardware_param(ros2_control, name):
     param = ros2_control.find(f"hardware/param[@name='{name}']")
     return None if param is None else param.text.strip()
+
+
+@requires_xacro
+@pytest.mark.parametrize("model,expected", HARDWARE_MODELS.items())
+def test_real_hardware_declares_its_gripper_model(model, expected):
+    assert hardware_param(expand(model, False), "gripper_model") == expected
 
 
 def command_interfaces_of(ros2_control, joint_name):
@@ -344,6 +356,7 @@ def test_hand_e_uses_prismatic_distance_and_parallel_mimics():
 def test_hand_e_driver_profile_and_dummy_reach_hardware():
     control = expand("robotiq_hand_e_gripper.urdf.xacro", False, "use_dummy:=true")
     assert hardware_param(control, "use_dummy").lower() == "true"
+    assert hardware_param(control, "gripper_model") == "hand_e"
     assert hardware_param(control, "gripper_closed_position") == "0.05"
     assert hardware_param(control, "gripper_max_speed") == "0.15"
     assert hardware_param(control, "gripper_max_force") == "185.0"

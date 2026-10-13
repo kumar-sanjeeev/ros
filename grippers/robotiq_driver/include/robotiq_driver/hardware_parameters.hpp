@@ -39,6 +39,7 @@
 #include <cstdint>
 
 #include <Robotiq/gripper/connection_config.hpp>
+#include <Robotiq/gripper/device_profile.hpp>
 
 #include <hardware_interface/hardware_info.hpp>
 
@@ -70,6 +71,11 @@ struct GripperParameters
    //! register-count-to-joint mapping. Model-specific, so it has no default
    //! here: the URDF must supply it.
    double closed_position = 0.0;
+
+   //! Model-specific measured register endpoints used for joint position
+   //! conversion. The default preserves existing 2F behavior when older
+   //! descriptions do not provide gripper_model.
+   Robotiq::DeviceProfile profile = Robotiq::profiles::k2F85;
 
    //! Full-scale speed and force, used to turn the SI values written to the
    //! set_gripper_max_velocity / set_gripper_max_effort command interfaces

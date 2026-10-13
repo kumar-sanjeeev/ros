@@ -62,6 +62,7 @@ ALL_CONFIGS = (JAZZY_CONFIG, HUMBLE_CONFIG)
 JOINT_PLACEHOLDER = "$(var gripper_joint)"
 # Humble EOL: delete.
 CLOSED_POSITION_PLACEHOLDER = "$(var gripper_closed_position)"
+GRIPPER_MODEL_PLACEHOLDER = "$(var gripper_model)"
 
 # The topic_based plugin exports neither the set_gripper_max_* command
 # interfaces nor the reactivate_gripper GPIO, so it gets a config of its own per
@@ -203,6 +204,7 @@ def test_mock_config_is_the_driver_config_without_the_object_status(config):
     mock_params = mock["robotiq_gripper_controller"]["ros__parameters"]
     del driver_params["use_object_status"], driver_params["object_status_timeout"]
     driver_params.pop("gripper_closed_position", None)  # Humble EOL: delete.
+    driver_params.pop("gripper_model", None)  # Humble EOL: delete.
     del mock_params["use_object_status"]
     assert mock_params == driver_params
 
@@ -469,9 +471,11 @@ def macro_closed_position(gripper_model):
 
 def resolved(config, joint=JOINT, gripper_model="2f_85"):
     return (
-        config.read_text().replace(JOINT_PLACEHOLDER, joint)
+        config.read_text()
+        .replace(JOINT_PLACEHOLDER, joint)
         # Humble EOL: delete.
         .replace(CLOSED_POSITION_PLACEHOLDER, macro_closed_position(gripper_model))
+        .replace(GRIPPER_MODEL_PLACEHOLDER, gripper_model)
     )
 
 

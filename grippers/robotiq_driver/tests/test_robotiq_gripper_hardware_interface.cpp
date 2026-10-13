@@ -406,6 +406,11 @@ public:
    void requestRecovery() { reactivate_gripper_cmd_ = 1.0; }
    void commandPosition(double position) { gripper_position_command_ = position; }
    void commandSpeed(double speed) { gripper_speed_ = speed; }
+   void selectHandEProfile()
+   {
+      parameters_.closed_position = 0.050;
+      parameters_.profile = Robotiq::profiles::kHandE;
+   }
    uint8_t commandedPositionRegister() const { return gripper_->getCommand().positionRequest; }
    uint8_t commandedSpeedRegister() const { return gripper_->getCommand().speed; }
    bool recoveryInFlight() const { return recovery_.valid(); }
@@ -416,6 +421,24 @@ public:
    bool gripperActivated() const { return gripper_->getStatus().gripperStatus.activated(); }
 };
 } // namespace
+
+TEST(TestRobotiqGripperHardwareInterface, HandEClosedCommandStopsAtItsMeasuredRegisterEndpoint)
+{
+   RecoveringGripper gripper;
+   gripper.selectHandEProfile();
+   const rclcpp_lifecycle::State state;
+   using CallbackReturn = RobotiqGripperHardwareInterface::CallbackReturn;
+
+   ASSERT_EQ(CallbackReturn::SUCCESS, gripper.on_configure(state));
+   ASSERT_EQ(CallbackReturn::SUCCESS, gripper.on_activate(state));
+
+   gripper.commandPosition(0.050);
+   ASSERT_EQ(hardware_interface::return_type::OK, gripper.write(rclcpp::Time{0}, rclcpp::Duration::from_seconds(0.01)));
+   EXPECT_EQ(248, gripper.commandedPositionRegister());
+
+   EXPECT_EQ(CallbackReturn::SUCCESS, gripper.on_deactivate(state));
+   EXPECT_EQ(CallbackReturn::SUCCESS, gripper.on_cleanup(state));
+}
 
 /**
  * A GPIO recovery runs the reset handshake on a background thread. A

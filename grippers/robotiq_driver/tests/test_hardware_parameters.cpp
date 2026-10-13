@@ -162,6 +162,28 @@ TEST(HardwareParameters, ReadsTheScalingParameters)
    EXPECT_DOUBLE_EQ(0.5, parameters.force_multiplier);
 }
 
+TEST(HardwareParameters, SelectsTheHandEDeviceProfile)
+{
+   const GripperParameters parameters = parseParameters(info_with({{"gripper_model", "hand_e"}}), logger());
+
+   EXPECT_EQ(3, parameters.profile.openPosition);
+   EXPECT_EQ(248, parameters.profile.closedPosition);
+   EXPECT_DOUBLE_EQ(0.050, parameters.profile.maxOpening);
+}
+
+TEST(HardwareParameters, OlderDescriptionsKeepThe2F85DeviceProfile)
+{
+   const GripperParameters parameters = parseParameters(info_with(), logger());
+
+   EXPECT_EQ(3, parameters.profile.openPosition);
+   EXPECT_EQ(230, parameters.profile.closedPosition);
+}
+
+TEST(HardwareParameters, AnUnknownGripperModelIsFatal)
+{
+   EXPECT_THROW(parseParameters(info_with({{"gripper_model", "unknown"}}), logger()), std::invalid_argument);
+}
+
 TEST(HardwareParameters, AMalformedParameterFallsBackToItsDefault)
 {
    // One unparsable string in the description must not take the gripper
