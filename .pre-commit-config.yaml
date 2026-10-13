@@ -58,7 +58,8 @@ repos:
     rev: v2.4.1
     hooks:
       - id: codespell
-        args: ['--write-changes', '-L', 'atleast,copys']  # comma-separated words codespell should ignore; copys = the Dockerfile COPY instruction (plural).
+        # hande/handE are the Hand-E model's established identifier spellings.
+        args: ['--write-changes', '-L', 'atleast,copys,hande,handE']
         exclude: \.(svg|pyc|stl|dae|lock)$
 
   - repo: https://github.com/pre-commit/mirrors-clang-format
